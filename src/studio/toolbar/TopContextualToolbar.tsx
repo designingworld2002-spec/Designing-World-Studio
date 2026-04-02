@@ -5,7 +5,7 @@ import TextStyleControls from "./groups/TextStyleControls"
 import AlignmentControls from "./groups/AlignmentControls"
 import SpacingControls from "./groups/SpacingControls"
 import AdvancedControls from "./groups/AdvancedControls"
-import MoreToolsControls from "./groups/MoreToolsControls"
+//import MoreToolsControls from "./groups/MoreToolsControls"
 import {
     AlignLeft,
     List,
@@ -18,7 +18,7 @@ import {
     Layers,
     Maximize,
     Spline,
-    MoreHorizontal
+    //MoreHorizontal
 } from "lucide-react";
 
 function TopContextualToolbar() {
