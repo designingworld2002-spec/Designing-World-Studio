@@ -7,27 +7,101 @@ import ObjectActionMenu from "../toolbar/ObjectActionMenu";
 function Workspace() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
-    
-    // 🔥 STORE SE NAYE DYNAMIC VARIABLES NIKALE
-    const { setCanvas, setSelectedItem, setMenuPos, canvasWidth, canvasHeight, templateJson } = useCanvasStore();
+    const { setCanvas, setSelectedItem, setMenuPos, canvasWidth, canvasHeight, templateJson, workspaceSize, mmToPx } = useCanvasStore();
 
     useEffect(() => {
         if (!canvasRef.current || !containerRef.current) return;
 
-        // Initialize Canvas
+        // Internal resolution 2000x2000px (200mm workspace)
         const canvas = new fabric.Canvas(canvasRef.current, {
-            backgroundColor: "#ffffff",
+            backgroundColor: "#f8f9fa",
+            width: workspaceSize * mmToPx,
+            height: workspaceSize * mmToPx,
             preserveObjectStacking: true,
-            renderOnAddRemove: true,
-            enableRetinaScaling: true,
-            skipTargetFind: false
         });
 
-        canvas.selection = true;
+        // --- DRAW GUIDES & LABELS ---
+        const drawGuides = () => {
+            const centerX = canvas.getWidth() / 2;
+            const centerY = canvas.getHeight() / 2;
+            const pWidth = canvasWidth * mmToPx;
+            const pHeight = canvasHeight * mmToPx;
 
+            // 1. Bleed Area (Product Canvas Size)
+            const bleedRect = new fabric.Rect({
+                left: centerX,
+                top: centerY,
+                width: pWidth,
+                height: pHeight,
+                fill: "#ffffff",
+                stroke: "#e0e0e0",
+                strokeWidth: 1,
+                selectable: false,
+                evented: false,
+                originX: 'center',
+                originY: 'center',
+                shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.1)', blur: 10 })
+            });
+            canvas.add(bleedRect);
+
+            // 2. Safe Area (1mm margin inside)
+            const safeMargin = 1 * mmToPx;
+            const safeRect = new fabric.Rect({
+                left: centerX,
+                top: centerY,
+                width: pWidth - (safeMargin * 2),
+                height: pHeight - (safeMargin * 2),
+                fill: "transparent",
+                stroke: "#00a86d",
+                strokeDashArray: [5, 5],
+                strokeWidth: 1,
+                selectable: false,
+                evented: false,
+                originX: 'center',
+                originY: 'center',
+                opacity: 0.5
+            });
+            canvas.add(safeRect);
+
+            // 3. Labels (Size Text)
+            const sizeLabel = new fabric.Text(`${canvasWidth}mm x ${canvasHeight}mm`, {
+                left: centerX,
+                top: centerY + (pHeight / 2) + 20,
+                fontSize: 14,
+                fontFamily: 'Arial',
+                fill: '#999',
+                originX: 'center',
+                selectable: false
+            });
+            canvas.add(sizeLabel);
+            
+            return { bleedRect, safeRect };
+        };
+
+        const { safeRect } = drawGuides();
+
+        // --- RESTRICT OBJECTS TO SAFE AREA ---
+        canvas.on('object:moving', (e) => {
+            const obj = e.target;
+            if (!obj) return;
+
+            const bounds = obj.getBoundingRect();
+            const sBounds = safeRect.getBoundingRect();
+
+            // Prevent items from going outside the green dotted line
+            if (bounds.left < sBounds.left) obj.set('left', sBounds.left + (obj.left! - bounds.left));
+            if (bounds.top < sBounds.top) obj.set('top', sBounds.top + (obj.top! - bounds.top));
+            if (bounds.left + bounds.width > sBounds.left + sBounds.width) 
+                obj.set('left', sBounds.left + sBounds.width - bounds.width + (obj.left! - bounds.left));
+            if (bounds.top + bounds.height > sBounds.top + sBounds.height) 
+                obj.set('top', sBounds.top + sBounds.height - bounds.height + (obj.top! - bounds.top));
+        });
+
+        // Sync Selection Data to Zustand
         const syncReact = () => {
             const active = canvas.getActiveObject() as any;
-            if (active) {
+            // Ignore guide layers
+            if (active && active.type !== 'rect' && active.type !== 'text') {
                 setSelectedItem({
                     type: active.type,
                     text: active.text || "",
@@ -46,8 +120,6 @@ function Workspace() {
                     locked: active.lockMovementX || false,
                     textBackgroundColor: active.textBackgroundColor
                 });
-
-                // Glue the action menu exactly to the top center of the active object
                 const bound = active.getBoundingRect();
                 setMenuPos({ top: bound.top, left: bound.left + (bound.width / 2) });
             } else {
@@ -64,86 +136,49 @@ function Workspace() {
         canvas.on('object:rotating', syncReact);
         canvas.on('text:changed', syncReact);
 
-        // 🔥 LOGIC: CANVAS SIZING AND TEMPLATE LOADING
-        const loadCanvasData = async () => {
-            // 1mm = 10px (High Resolution Internal Canvas)
-            let internalWidth = canvasWidth * 10;
-            let internalHeight = canvasHeight * 10;
-
-            if (templateJson) {
-                try {
-                    // Shopify se JSON fetch kar raha hai
-                    const response = await fetch(templateJson);
-                    const data = await response.json();
-                    const fabricData = data.fabric || data; // Handle generator format
-
-                    await new Promise((resolve) => {
-                        canvas.loadFromJSON(fabricData, () => {
-                            // JSON load hone ke baad dimensions update kar lo
-                            internalWidth = canvas.getWidth();
-                            internalHeight = canvas.getHeight();
-                            resolve(true);
-                        });
-                    });
-                } catch (err) {
-                    console.error("Failed to load template:", err);
-                }
-            }
-
-            // Internal Canvas Quality set ki
-            canvas.setWidth(internalWidth);
-            canvas.setHeight(internalHeight);
-
-            // CSS Responsive Scaling Logic
-            const resizeCanvasCSS = () => {
-                if (containerRef.current) {
-                    const width = containerRef.current.clientWidth;
-                    const height = containerRef.current.clientHeight;
-                    // Fabric canvas ko wrapper div ke size me fit kar deta hai
-                    canvas.setDimensions({ width, height }, { cssOnly: true });
-                }
-            };
-
-            resizeCanvasCSS();
-            window.addEventListener('resize', resizeCanvasCSS);
+        // --- RESPONSIVE SCALING (Fit to Window) ---
+        const resizeCanvas = () => {
+            if (!containerRef.current) return;
+            const containerSize = Math.min(containerRef.current.clientWidth, containerRef.current.clientHeight) * 0.95;
+            const scale = containerSize / (workspaceSize * mmToPx);
             
-            setCanvas(canvas);
-            canvas.renderAll();
-
-            return () => window.removeEventListener('resize', resizeCanvasCSS);
+            canvas.setDimensions({
+                width: workspaceSize * mmToPx * scale,
+                height: workspaceSize * mmToPx * scale
+            }, { cssOnly: true });
+            
+            canvas.setZoom(scale);
         };
 
-        loadCanvasData();
+        // --- TEMPLATE LOADING ---
+        if (templateJson) {
+            fetch(templateJson).then(res => res.json()).then(data => {
+                const fabricData = data.fabric || data;
+                canvas.loadFromJSON(fabricData, () => {
+                    canvas.renderAll();
+                    resizeCanvas();
+                });
+            }).catch(err => console.error("Template load failed:", err));
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+        setCanvas(canvas);
 
         return () => {
+            window.removeEventListener('resize', resizeCanvas);
             canvas.dispose();
         };
-    }, [setCanvas, setSelectedItem, setMenuPos, canvasWidth, canvasHeight, templateJson]); // 🔥 Ye variables change hone par canvas reload hoga
+    }, [canvasWidth, canvasHeight, templateJson, workspaceSize, mmToPx]);
 
     return (
-        <div className="flex-1 bg-[#f2f2f4] relative flex flex-col items-center justify-center overflow-hidden w-full h-full p-8">
-
-            {/* Floating Pill Toolbar */}
+        <div className="flex-1 bg-[#f2f2f4] relative flex flex-col items-center justify-center w-full h-full p-4 overflow-hidden">
             <TopContextualToolbar />
-
-            {/* 🔥 DYNAMIC ASPECT RATIO CONTAINER */}
-            <div 
-                ref={containerRef} 
-                style={{ aspectRatio: `${canvasWidth} / ${canvasHeight}` }}
-                className="relative w-full max-h-[80%] max-w-[800px] bg-white shadow-[0_10px_40px_rgba(0,0,0,0.15)] border border-gray-300 mt-8"
-            >
-                {/* Local Object Action Menu */}
-                <ObjectActionMenu />
-
-                {/* SAFETY AREA BORDER (approx 2mm inside) */}
-                <div className="absolute top-[3%] bottom-[3%] left-[3%] right-[3%] border border-[#00a86d] border-dashed opacity-50 pointer-events-none z-30 flex items-start justify-center">
-                    <span className="bg-white text-[#00a86d] text-[10px] font-bold px-2 mt-[-8px] rounded-full border border-[#00a86d] shadow-sm">
-                        Safety Area
-                    </span>
+            <div ref={containerRef} className="w-full h-full flex items-center justify-center mt-12">
+                <div className="relative shadow-[0_4px_20px_rgba(0,0,0,0.08)] bg-[#f8f9fa] border border-gray-200">
+                    <ObjectActionMenu />
+                    <canvas ref={canvasRef} />
                 </div>
-
-                {/* Fabric.js Graphics Layer */}
-                <canvas ref={canvasRef} className="absolute inset-0 z-0" />
             </div>
         </div>
     );
