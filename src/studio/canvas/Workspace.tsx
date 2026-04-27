@@ -33,7 +33,7 @@ function Workspace() {
             const safeW = (canvasWidth - 2) * mmToPx;  // 1mm inside each side
             const safeH = (canvasHeight - 2) * mmToPx;
 
-            // 1. FULL BLEED AREA (Outer boundary)
+            // 1. FULL BLEED AREA
             const bleedRect = new fabric.Rect({
                 left: centerX, top: centerY,
                 width: bleedW, height: bleedH,
@@ -42,7 +42,7 @@ function Workspace() {
             });
             canvas.add(bleedRect);
 
-            // 2. TRIM SIZE (Actual Product - White Box)
+            // 2. TRIM SIZE (Actual Product)
             const trimRect = new fabric.Rect({
                 left: centerX, top: centerY,
                 width: trimW, height: trimH,
@@ -53,7 +53,7 @@ function Workspace() {
             canvas.add(trimRect);
             canvas.sendToBack(trimRect);
 
-            // 3. SAFETY AREA (Inner boundary)
+            // 3. SAFETY AREA
             const safeRect = new fabric.Rect({
                 left: centerX, top: centerY,
                 width: safeW, height: safeH,
@@ -62,7 +62,7 @@ function Workspace() {
             });
             canvas.add(safeRect);
 
-            // 4. LABELS (Positioned outside the design)
+            // 4. LABELS
             const labelStyle = { fontSize: 18, fontFamily: 'Arial', fontWeight: 'bold', selectable: false, evented: false };
             
             const trimLabel = new fabric.Text(`Trim Size: ${canvasWidth}mm x ${canvasHeight}mm`, {
@@ -87,7 +87,6 @@ function Workspace() {
 
                 const objBounds = obj.getBoundingRect(true, true);
                 
-                // Object movement restricted to Green Safe Area
                 if (objBounds.left < sBounds.left) obj.set('left', obj.left! + (sBounds.left - objBounds.left));
                 if (objBounds.top < sBounds.top) obj.set('top', obj.top! + (sBounds.top - objBounds.top));
                 if (objBounds.left + objBounds.width > sBounds.left + sBounds.width) 
@@ -96,16 +95,26 @@ function Workspace() {
                     obj.set('top', obj.top! + (sBounds.top + sBounds.height - (objBounds.top + objBounds.height)));
             });
 
-            // Sync with React Sidebar
+            // 🔥 THE FIX: Added strictly typed fallbacks to prevent React Runtime crashes
             const sync = () => {
                 const active = canvas.getActiveObject() as any;
                 if (active && active.selectable) {
                     setSelectedItem({
-                        type: active.type, text: active.text || "", fontSize: active.fontSize, fill: active.fill,
-                        fontFamily: active.fontFamily, fontWeight: active.fontWeight, fontStyle: active.fontStyle,
-                        underline: active.underline, linethrough: active.linethrough || false, textAlign: active.textAlign,
-                        opacity: active.opacity, angle: active.angle, lineHeight: active.lineHeight || 1.16,
-                        charSpacing: active.charSpacing || 0, locked: active.lockMovementX || false
+                        type: active.type || "",
+                        text: active.text || "",
+                        fontSize: active.fontSize || 0,
+                        fill: active.fill || "#000000",
+                        fontFamily: active.fontFamily || "Arial",
+                        fontWeight: active.fontWeight || "normal",
+                        fontStyle: active.fontStyle || "normal",
+                        underline: active.underline || false,
+                        linethrough: active.linethrough || false,
+                        textAlign: active.textAlign || "left",
+                        opacity: active.opacity ?? 1,
+                        angle: active.angle || 0,
+                        lineHeight: active.lineHeight || 1.16,
+                        charSpacing: active.charSpacing || 0,
+                        locked: active.lockMovementX || false
                     });
                     const b = active.getBoundingRect();
                     setMenuPos({ top: b.top, left: b.left + (b.width / 2) });
@@ -114,7 +123,9 @@ function Workspace() {
                     setMenuPos(null);
                 }
             };
+            
             canvas.on('selection:created', sync);
+            canvas.on('selection:updated', sync); // 🔥 THE FIX: Added missing event listener
             canvas.on('selection:cleared', sync);
             canvas.on('object:modified', sync);
         };
@@ -127,7 +138,6 @@ function Workspace() {
             canvas.setZoom(scale);
         };
 
-        // Master Init
         const init = (data?: any) => {
             const finalSetup = () => {
                 canvas.setWidth(INTERNAL_SIZE);
