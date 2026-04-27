@@ -7,15 +7,16 @@ import ObjectActionMenu from "../toolbar/ObjectActionMenu";
 function Workspace() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
-    const { setCanvas, setSelectedItem, setMenuPos } = useCanvasStore();
+    
+    // 🔥 STORE SE NAYE DYNAMIC VARIABLES NIKALE
+    const { setCanvas, setSelectedItem, setMenuPos, canvasWidth, canvasHeight, templateJson } = useCanvasStore();
 
     useEffect(() => {
         if (!canvasRef.current || !containerRef.current) return;
 
+        // Initialize Canvas
         const canvas = new fabric.Canvas(canvasRef.current, {
             backgroundColor: "#ffffff",
-            width: containerRef.current.clientWidth,
-            height: containerRef.current.clientHeight,
             preserveObjectStacking: true,
             renderOnAddRemove: true,
             enableRetinaScaling: true,
@@ -54,6 +55,7 @@ function Workspace() {
                 setMenuPos(null);
             }
         };
+
         canvas.on('selection:created', syncReact);
         canvas.on('selection:updated', syncReact);
         canvas.on('selection:cleared', syncReact);
@@ -62,64 +64,80 @@ function Workspace() {
         canvas.on('object:rotating', syncReact);
         canvas.on('text:changed', syncReact);
 
-        setCanvas(canvas);
+        // 🔥 LOGIC: CANVAS SIZING AND TEMPLATE LOADING
+        const loadCanvasData = async () => {
+            // 1mm = 10px (High Resolution Internal Canvas)
+            let internalWidth = canvasWidth * 10;
+            let internalHeight = canvasHeight * 10;
 
-        const handleResize = () => {
-            if (containerRef.current) {
-                canvas.setWidth(containerRef.current.clientWidth);
-                canvas.setHeight(containerRef.current.clientHeight);
-                canvas.renderAll();
-                syncReact();
+            if (templateJson) {
+                try {
+                    // Shopify se JSON fetch kar raha hai
+                    const response = await fetch(templateJson);
+                    const data = await response.json();
+                    const fabricData = data.fabric || data; // Handle generator format
+
+                    await new Promise((resolve) => {
+                        canvas.loadFromJSON(fabricData, () => {
+                            // JSON load hone ke baad dimensions update kar lo
+                            internalWidth = canvas.getWidth();
+                            internalHeight = canvas.getHeight();
+                            resolve(true);
+                        });
+                    });
+                } catch (err) {
+                    console.error("Failed to load template:", err);
+                }
             }
+
+            // Internal Canvas Quality set ki
+            canvas.setWidth(internalWidth);
+            canvas.setHeight(internalHeight);
+
+            // CSS Responsive Scaling Logic
+            const resizeCanvasCSS = () => {
+                if (containerRef.current) {
+                    const width = containerRef.current.clientWidth;
+                    const height = containerRef.current.clientHeight;
+                    // Fabric canvas ko wrapper div ke size me fit kar deta hai
+                    canvas.setDimensions({ width, height }, { cssOnly: true });
+                }
+            };
+
+            resizeCanvasCSS();
+            window.addEventListener('resize', resizeCanvasCSS);
+            
+            setCanvas(canvas);
+            canvas.renderAll();
+
+            return () => window.removeEventListener('resize', resizeCanvasCSS);
         };
-        window.addEventListener('resize', handleResize);
+
+        loadCanvasData();
+
         return () => {
-            window.removeEventListener('resize', handleResize);
             canvas.dispose();
         };
-    }, [setCanvas, setSelectedItem, setMenuPos]);
-
-    useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-
-        const length = params.get("length"); // horizontal
-        const width = params.get("width");   // vertical
-
-        console.log("Length (horizontal):", length);
-        console.log("Width (vertical):", width);
-    }, []);
+    }, [setCanvas, setSelectedItem, setMenuPos, canvasWidth, canvasHeight, templateJson]); // 🔥 Ye variables change hone par canvas reload hoga
 
     return (
-        <div className="flex-1 bg-[#f2f2f4] relative flex flex-col items-center justify-center overflow-hidden w-full h-full">
+        <div className="flex-1 bg-[#f2f2f4] relative flex flex-col items-center justify-center overflow-hidden w-full h-full p-8">
 
             {/* Floating Pill Toolbar */}
             <TopContextualToolbar />
 
-            {/* Center Product Wrapper */}
-            <div ref={containerRef} className="relative w-full max-w-[700px] aspect-[4/3] bg-white shadow-2xl border border-gray-200 mt-12">
-
+            {/* 🔥 DYNAMIC ASPECT RATIO CONTAINER */}
+            <div 
+                ref={containerRef} 
+                style={{ aspectRatio: `${canvasWidth} / ${canvasHeight}` }}
+                className="relative w-full max-h-[80%] max-w-[800px] bg-white shadow-[0_10px_40px_rgba(0,0,0,0.15)] border border-gray-300 mt-8"
+            >
                 {/* Local Object Action Menu */}
                 <ObjectActionMenu />
 
-                {/* SAFE AREA MASK */}
-                <div className="absolute inset-0 pointer-events-none z-20">
-
-                    {/* Top mask */}
-                    <div className="absolute top-0 left-0 right-0 h-8 bg-white"></div>
-
-                    {/* Bottom mask */}
-                    <div className="absolute bottom-0 left-0 right-0 h-8 bg-white"></div>
-
-                    {/* Left mask */}
-                    <div className="absolute top-0 bottom-0 left-0 w-8 bg-white"></div>
-
-                    {/* Right mask */}
-                    <div className="absolute top-0 bottom-0 right-0 w-8 bg-white"></div>
-
-                </div>
-
-                <div className="absolute inset-8 border border-[#00a86d] border-dashed opacity-40 pointer-events-none z-30 flex items-start justify-center">
-                    <span className="bg-white text-[#00a86d] text-[10px] font-bold px-2 mt-[-8px] rounded-full border border-[#00a86d]">
+                {/* SAFETY AREA BORDER (approx 2mm inside) */}
+                <div className="absolute top-[3%] bottom-[3%] left-[3%] right-[3%] border border-[#00a86d] border-dashed opacity-50 pointer-events-none z-30 flex items-start justify-center">
+                    <span className="bg-white text-[#00a86d] text-[10px] font-bold px-2 mt-[-8px] rounded-full border border-[#00a86d] shadow-sm">
                         Safety Area
                     </span>
                 </div>
@@ -127,7 +145,6 @@ function Workspace() {
                 {/* Fabric.js Graphics Layer */}
                 <canvas ref={canvasRef} className="absolute inset-0 z-0" />
             </div>
-
         </div>
     );
 }
