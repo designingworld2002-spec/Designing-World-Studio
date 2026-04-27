@@ -26,8 +26,6 @@ interface CanvasState {
 
     canvasWidth: number;
     canvasHeight: number;
-    workspaceSize: number;
-    mmToPx: number;
     productTitle: string;
     templateJson: string | null;
     studioMode: string | null;
@@ -61,10 +59,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     activeTab: 'text',
     setActiveTab: (tab) => set({ activeTab: tab }),
     
-    canvasWidth: 70, 
-    canvasHeight: 55,
-    workspaceSize: 200, // 200mm fixed virtual workspace
-    mmToPx: 10,
+    canvasWidth: 70, // Default 70mm
+    canvasHeight: 55, // Default 55mm
     productTitle: 'Woven Labels',
     templateJson: null,
     studioMode: null,
