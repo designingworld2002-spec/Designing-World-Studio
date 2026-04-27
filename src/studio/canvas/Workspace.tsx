@@ -7,7 +7,13 @@ import ObjectActionMenu from "../toolbar/ObjectActionMenu";
 function Workspace() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
-    const { setCanvas, setSelectedItem, setMenuPos, canvasWidth, canvasHeight, templateJson, workspaceSize, mmToPx } = useCanvasStore();
+    
+    // 🔥 FIX 1: Store se sirf zaroori cheezein li hain
+    const { setCanvas, setSelectedItem, setMenuPos, canvasWidth, canvasHeight, templateJson } = useCanvasStore();
+
+    // 🔥 FIX 2: Constants ko yahi fix kar diya taaki NaN wala crash kabhi na aaye
+    const workspaceSize = 200;
+    const mmToPx = 10;
 
     useEffect(() => {
         if (!canvasRef.current || !containerRef.current) return;
@@ -93,14 +99,15 @@ function Workspace() {
                     obj.set('top', obj.top! + (sBounds.top + sBounds.height - (objBounds.top + objBounds.height)));
             });
 
-            // 🔥 CRASH FIX: Safe Fallbacks added
+            // 🔥 FIX 3: Isme saare values ke defaults hain, toh click karne par bhi blank nahi hoga
             const sync = () => {
                 const active = canvas.getActiveObject() as any;
-                if (active && active.selectable) {
+                // Double check to ignore rect guidelines
+                if (active && active.selectable && active.type !== 'rect') {
                     setSelectedItem({
-                        type: active.type || "",
+                        type: active.type || "i-text",
                         text: active.text || "",
-                        fontSize: active.fontSize || 0,
+                        fontSize: active.fontSize || 20,
                         fill: active.fill || "#000000",
                         fontFamily: active.fontFamily || "Arial",
                         fontWeight: active.fontWeight || "normal",
@@ -169,12 +176,11 @@ function Workspace() {
 
         window.addEventListener('resize', resize);
         return () => { window.removeEventListener('resize', resize); canvas.dispose(); };
-    }, [canvasWidth, canvasHeight, templateJson, workspaceSize, mmToPx]);
+    }, [canvasWidth, canvasHeight, templateJson]);
 
     return (
         <div className="flex-1 bg-[#f2f2f4] relative flex flex-col items-center justify-center w-full h-full p-4 overflow-hidden">
             <TopContextualToolbar />
-            {/* 🔥 ZOOM FIX: Added min-h-0 so canvas doesn't stretch 2000px */}
             <div ref={containerRef} className="w-full flex-1 min-h-0 flex items-center justify-center mt-12 overflow-hidden">
                 <div className="relative shadow-lg border border-gray-200">
                     <ObjectActionMenu />
