@@ -1,9 +1,12 @@
+import { useEffect } from 'react';
 import { useCanvasStore } from "./studio/store/canvasStore";
 import Workspace from "./studio/canvas/Workspace";
+import UploadsPanel from "./studio/sidebar/UploadsPanel";
+import ColorPanel from "./studio/sidebar/ColorPanel";
 
 import {
   Type, Image as ImageIcon, Shapes, Monitor, ChevronDown, Plus,
-  Redo, Undo, Cloud, List
+  Redo, Undo, Cloud, List, Palette
 } from 'lucide-react';
 
 // ============================================================================
@@ -25,7 +28,34 @@ import {
 // 6. MAIN APPLICATION SHELL
 // ============================================================================
 export default function App() {
-  const { activeTab, addText } = useCanvasStore();
+  // 🔥 Store se naye variables nikal le
+  const { activeTab, setActiveTab, addText, productTitle, initStudioConfig } = useCanvasStore();
+
+  // 🔥 URL PARAMS READ KARNE KA LOGIC
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    
+    const w = parseFloat(params.get('width') || '0');
+    const h = parseFloat(params.get('height') || '0');
+    const pTitle = params.get('product_title') || '';
+    const tJson = params.get('template_json') || '';
+    const mode = params.get('mode') || '';
+    const autoOpenUpload = params.get('autoOpenUpload') === 'true';
+
+    // Store ko update kar de URL values se
+    initStudioConfig({
+      width: w > 0 ? w : undefined,
+      height: h > 0 ? h : undefined,
+      productTitle: pTitle ? decodeURIComponent(pTitle.replace(/\+/g, ' ')) : undefined,
+      templateJson: tJson ? decodeURIComponent(tJson) : undefined,
+      mode: mode ? mode : undefined
+    });
+
+    // Agar user Shopify se "Upload your own design" click karke aaya hai, toh seedha Uploads tab khol de
+    if (autoOpenUpload) {
+      setActiveTab('uploads');
+    }
+  }, []);
 
   return (
     <div className="flex flex-col h-screen w-full bg-white font-sans text-[#333333] overflow-hidden selection:bg-blue-100">
@@ -34,8 +64,9 @@ export default function App() {
         <div className="flex items-center space-x-4">
           <div className="w-10 h-10 bg-blue-50 text-[#009ceb] flex items-center justify-center rounded font-black text-xl">T</div>
           <div className="flex flex-col">
+            {/* 🔥 HARDCODED NAAM HATAKAR DYNAMIC TITLE LAGA DIYA */}
             <span className="font-bold text-sm leading-none flex items-center gap-1 cursor-pointer">
-              Printed Polos - Multi Location <ChevronDown size={14} className="ml-1 text-gray-400" />
+              {productTitle} <ChevronDown size={14} className="ml-1 text-gray-400" />
             </span>
           </div>
         </div>
@@ -56,7 +87,7 @@ export default function App() {
       <div className="flex flex-1 overflow-hidden relative">
 
         <div className="w-[80px] bg-white border-r border-gray-200 flex flex-col items-center py-4 space-y-2 z-40 shadow-[4px_0_10px_rgba(0,0,0,0.02)]">
-          <SideIcon icon={ImageIcon} label="Material color" tab="material" />
+          <SideIcon icon={Palette} label="Color" tab="color" />
           <SideIcon icon={Type} label="Text" tab="text" />
           <SideIcon icon={List} label="Names" tab="names" />
           <SideIcon icon={ImageIcon} label="Uploads" tab="uploads" />
@@ -83,6 +114,12 @@ export default function App() {
                   New Text Field
                 </button>
               </div>
+            )}
+            {activeTab === 'uploads' && (
+              <UploadsPanel />
+            )}
+            {activeTab === 'color' && (
+              <ColorPanel />
             )}
           </div>
         </div>

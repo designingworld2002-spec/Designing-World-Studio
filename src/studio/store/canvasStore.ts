@@ -24,6 +24,13 @@ interface CanvasState {
     activeTab: string | null;
     setActiveTab: (tab: string | null) => void;
 
+    canvasWidth: number;
+    canvasHeight: number;
+    productTitle: string;
+    templateJson: string | null;
+    studioMode: string | null;
+    initStudioConfig: (config: { width?: number, height?: number, productTitle?: string, templateJson?: string, mode?: string }) => void;
+
     canvas: fabric.Canvas | null;
     setCanvas: (canvas: fabric.Canvas) => void;
 
@@ -44,11 +51,27 @@ interface CanvasState {
     applyTextEffect: (effect: string) => void;
     alignObject: (position: "left" | "center" | "right") => void;
     flipObject: (direction: "horizontal" | "vertical") => void;
+    addImage: (url: string) => void;
+    setCanvasBackground: (color: string) => void;
 }
 
 export const useCanvasStore = create<CanvasState>((set, get) => ({
     activeTab: 'text',
     setActiveTab: (tab) => set({ activeTab: tab }),
+    
+    canvasWidth: 70, // Default 70mm
+    canvasHeight: 55, // Default 55mm
+    productTitle: 'Woven Labels',
+    templateJson: null,
+    studioMode: null,
+    
+    initStudioConfig: (config) => set((state) => ({
+        canvasWidth: config.width || state.canvasWidth,
+        canvasHeight: config.height || state.canvasHeight,
+        productTitle: config.productTitle || state.productTitle,
+        templateJson: config.templateJson || state.templateJson,
+        studioMode: config.mode || state.studioMode,
+    })),
 
     canvas: null,
     setCanvas: (canvas) => set({ canvas }),
@@ -241,5 +264,40 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         }
 
         canvas.requestRenderAll()
+    },
+    addImage: (url) => {
+        const { canvas } = get();
+        if (!canvas) return;
+
+        fabric.Image.fromURL(url, (img) => {
+            // Scale down image if it's too large
+            const maxWidth = canvas.getWidth() * 0.8;
+            const maxHeight = canvas.getHeight() * 0.8;
+            
+            if (img.width! > maxWidth || img.height! > maxHeight) {
+                const scale = Math.min(maxWidth / img.width!, maxHeight / img.height!);
+                img.scale(scale);
+            }
+
+            img.set({
+                left: canvas.getWidth() / 2,
+                top: canvas.getHeight() / 2,
+                originX: 'center',
+                originY: 'center',
+                objectCaching: false
+            });
+
+            canvas.add(img);
+            canvas.setActiveObject(img);
+            canvas.renderAll();
+        }, { crossOrigin: 'anonymous' });
+    },
+    setCanvasBackground: (color) => {
+        const { canvas } = get();
+        if (!canvas) return;
+
+        canvas.setBackgroundColor(color, () => {
+            canvas.renderAll();
+        });
     },
 }));

@@ -79,6 +79,16 @@ function Workspace() {
         };
     }, [setCanvas, setSelectedItem, setMenuPos]);
 
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+
+        const length = params.get("length"); // horizontal
+        const width = params.get("width");   // vertical
+
+        console.log("Length (horizontal):", length);
+        console.log("Width (vertical):", width);
+    }, []);
+
     return (
         <div className="flex-1 bg-[#f2f2f4] relative flex flex-col items-center justify-center overflow-hidden w-full h-full">
 
