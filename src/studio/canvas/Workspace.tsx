@@ -12,172 +12,180 @@ function Workspace() {
     useEffect(() => {
         if (!canvasRef.current || !containerRef.current) return;
 
-        const INTERNAL_SIZE = workspaceSize * mmToPx; // 2000px virtual grid
-
+        // 1. Initialize Canvas
         const canvas = new fabric.Canvas(canvasRef.current, {
-            backgroundColor: "#f0f2f5",
-            width: INTERNAL_SIZE,
-            height: INTERNAL_SIZE,
+            backgroundColor: "#f8f9fa",
+            width: workspaceSize * mmToPx,
+            height: workspaceSize * mmToPx,
             preserveObjectStacking: true,
         });
 
-        const drawVistaprintGuides = () => {
-            const centerX = INTERNAL_SIZE / 2;
-            const centerY = INTERNAL_SIZE / 2;
-            
-            // Dimensions in PX
-            const trimW = canvasWidth * mmToPx;
-            const trimH = canvasHeight * mmToPx;
-            const bleedW = (canvasWidth + 2) * mmToPx; // 1mm extra each side
-            const bleedH = (canvasHeight + 2) * mmToPx;
-            const safeW = (canvasWidth - 2) * mmToPx;  // 1mm inside each side
-            const safeH = (canvasHeight - 2) * mmToPx;
+        // 2. Function to draw guides (Bleed & Safe Area)
+        const drawGuides = () => {
+            const centerX = canvas.getWidth() / 2;
+            const centerY = canvas.getHeight() / 2;
+            const pWidth = canvasWidth * mmToPx;
+            const pHeight = canvasHeight * mmToPx;
 
-            // 1. FULL BLEED AREA
             const bleedRect = new fabric.Rect({
                 left: centerX, top: centerY,
-                width: bleedW, height: bleedH,
-                fill: "transparent", stroke: "#ff9900", strokeDashArray: [5, 5],
-                strokeWidth: 2, selectable: false, evented: false, originX: 'center', originY: 'center'
+                width: pWidth, height: pHeight,
+                fill: "#ffffff", stroke: "#e0e0e0", strokeWidth: 1,
+                selectable: false, evented: false, originX: 'center', originY: 'center',
+                shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.1)', blur: 10 })
             });
             canvas.add(bleedRect);
+            canvas.sendToBack(bleedRect); // Ensure white box is always behind the design
 
-            // 2. TRIM SIZE (Actual Product)
-            const trimRect = new fabric.Rect({
-                left: centerX, top: centerY,
-                width: trimW, height: trimH,
-                fill: "#ffffff", stroke: "#000000", strokeWidth: 1,
-                selectable: false, evented: false, originX: 'center', originY: 'center',
-                shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.15)', blur: 15 })
-            });
-            canvas.add(trimRect);
-            canvas.sendToBack(trimRect);
-
-            // 3. SAFETY AREA
+            const safeMargin = 1 * mmToPx;
             const safeRect = new fabric.Rect({
                 left: centerX, top: centerY,
-                width: safeW, height: safeH,
-                fill: "transparent", stroke: "#00a86d", strokeDashArray: [5, 5],
-                strokeWidth: 2, selectable: false, evented: false, originX: 'center', originY: 'center'
+                width: pWidth - (safeMargin * 2), height: pHeight - (safeMargin * 2),
+                fill: "transparent", stroke: "#00a86d", strokeDashArray: [5, 5], strokeWidth: 1,
+                selectable: false, evented: false, originX: 'center', originY: 'center', opacity: 0.5
             });
             canvas.add(safeRect);
 
-            // 4. LABELS
-            const labelStyle = { fontSize: 18, fontFamily: 'Arial', fontWeight: 'bold', selectable: false, evented: false };
-            
-            const trimLabel = new fabric.Text(`Trim Size: ${canvasWidth}mm x ${canvasHeight}mm`, {
-                ...labelStyle, fill: '#333', left: centerX, top: centerY - (bleedH / 2) - 40, originX: 'center'
+            const sizeLabel = new fabric.Text(`${canvasWidth}mm x ${canvasHeight}mm`, {
+                left: centerX, top: centerY + (pHeight / 2) + 20,
+                fontSize: 14, fontFamily: 'Arial', fill: '#999', originX: 'center', selectable: false, evented: false
             });
-            
-            const bleedLabel = new fabric.Text(`Full Bleed: ${canvasWidth + 2}mm x ${canvasHeight + 2}mm`, {
-                ...labelStyle, fill: '#ff9900', left: centerX, top: centerY + (bleedH / 2) + 20, originX: 'center'
-            });
+            canvas.add(sizeLabel);
 
-            canvas.add(trimLabel, bleedLabel);
-
-            return { safeRect };
+            return { bleedRect, safeRect };
         };
 
-        const setupBoundaries = (safeRect: fabric.Rect) => {
-            const sBounds = safeRect.getBoundingRect(true, true);
-
+        // 3. Setup boundary restrictions and sync
+        const setupEvents = (safeRect: fabric.Rect) => {
             canvas.on('object:moving', (e) => {
                 const obj = e.target;
-                if (!obj || !obj.selectable) return;
+                if (!obj || (obj.type === 'rect' && !obj.selectable)) return;
 
-                const objBounds = obj.getBoundingRect(true, true);
-                
-                if (objBounds.left < sBounds.left) obj.set('left', obj.left! + (sBounds.left - objBounds.left));
-                if (objBounds.top < sBounds.top) obj.set('top', obj.top! + (sBounds.top - objBounds.top));
-                if (objBounds.left + objBounds.width > sBounds.left + sBounds.width) 
-                    obj.set('left', obj.left! + (sBounds.left + sBounds.width - (objBounds.left + objBounds.width)));
-                if (objBounds.top + objBounds.height > sBounds.top + sBounds.height) 
-                    obj.set('top', obj.top! + (sBounds.top + sBounds.height - (objBounds.top + objBounds.height)));
+                const bounds = obj.getBoundingRect();
+                const sBounds = safeRect.getBoundingRect();
+
+                // Prevent moving outside the green dashed line
+                if (bounds.left < sBounds.left) obj.set('left', sBounds.left + (obj.left! - bounds.left));
+                if (bounds.top < sBounds.top) obj.set('top', sBounds.top + (obj.top! - bounds.top));
+                if (bounds.left + bounds.width > sBounds.left + sBounds.width) 
+                    obj.set('left', sBounds.left + sBounds.width - bounds.width + (obj.left! - bounds.left));
+                if (bounds.top + bounds.height > sBounds.top + sBounds.height) 
+                    obj.set('top', sBounds.top + sBounds.height - bounds.height + (obj.top! - bounds.top));
             });
 
-            // 🔥 THE FIX: Added strictly typed fallbacks to prevent React Runtime crashes
-            const sync = () => {
+            const syncReact = () => {
                 const active = canvas.getActiveObject() as any;
                 if (active && active.selectable) {
                     setSelectedItem({
-                        type: active.type || "",
-                        text: active.text || "",
-                        fontSize: active.fontSize || 0,
-                        fill: active.fill || "#000000",
-                        fontFamily: active.fontFamily || "Arial",
-                        fontWeight: active.fontWeight || "normal",
-                        fontStyle: active.fontStyle || "normal",
-                        underline: active.underline || false,
-                        linethrough: active.linethrough || false,
-                        textAlign: active.textAlign || "left",
-                        opacity: active.opacity ?? 1,
-                        angle: active.angle || 0,
-                        lineHeight: active.lineHeight || 1.16,
-                        charSpacing: active.charSpacing || 0,
-                        locked: active.lockMovementX || false
+                        type: active.type, text: active.text || "", fontSize: active.fontSize, fill: active.fill,
+                        fontFamily: active.fontFamily, fontWeight: active.fontWeight, fontStyle: active.fontStyle,
+                        underline: active.underline, linethrough: active.linethrough || false, textAlign: active.textAlign,
+                        opacity: active.opacity, angle: active.angle, lineHeight: active.lineHeight || 1.16,
+                        charSpacing: active.charSpacing || 0, locked: active.lockMovementX || false, textBackgroundColor: active.textBackgroundColor
                     });
-                    const b = active.getBoundingRect();
-                    setMenuPos({ top: b.top, left: b.left + (b.width / 2) });
+                    const bound = active.getBoundingRect();
+                    setMenuPos({ top: bound.top, left: bound.left + (bound.width / 2) });
                 } else {
                     setSelectedItem(null);
                     setMenuPos(null);
                 }
             };
-            
-            canvas.on('selection:created', sync);
-            canvas.on('selection:updated', sync); // 🔥 THE FIX: Added missing event listener
-            canvas.on('selection:cleared', sync);
-            canvas.on('object:modified', sync);
+
+            canvas.on('selection:created', syncReact);
+            canvas.on('selection:updated', syncReact);
+            canvas.on('selection:cleared', syncReact);
+            canvas.on('object:modified', syncReact);
+            canvas.on('object:scaling', syncReact);
+            canvas.on('object:rotating', syncReact);
+            canvas.on('text:changed', syncReact);
         };
 
-        const resize = () => {
+        // 4. Responsive scaling to fit window
+        const resizeCanvas = () => {
             if (!containerRef.current) return;
-            const size = Math.min(containerRef.current.clientWidth, containerRef.current.clientHeight) * 0.9;
-            const scale = size / INTERNAL_SIZE;
-            canvas.setDimensions({ width: INTERNAL_SIZE * scale, height: INTERNAL_SIZE * scale });
+            const containerSize = Math.min(containerRef.current.clientWidth, containerRef.current.clientHeight) * 0.95;
+            const scale = containerSize / (workspaceSize * mmToPx);
+            
+            canvas.setDimensions({
+                width: workspaceSize * mmToPx * scale,
+                height: workspaceSize * mmToPx * scale
+            }, { cssOnly: true });
+            
             canvas.setZoom(scale);
         };
 
-        const init = (data?: any) => {
-            const finalSetup = () => {
-                canvas.setWidth(INTERNAL_SIZE);
-                canvas.setHeight(INTERNAL_SIZE);
+        // 5. The Master Sequence: Load -> Scale -> Draw Guides
+        const initializeWorkspace = (fabricData?: any) => {
+            const finishSetup = () => {
+                // Restore internal high-res size
+                canvas.setWidth(workspaceSize * mmToPx);
+                canvas.setHeight(workspaceSize * mmToPx);
+                canvas.backgroundColor = "#f8f9fa";
+
                 const objects = canvas.getObjects();
-                
                 if (objects.length > 0) {
+                    const pWidth = canvasWidth * mmToPx;
+                    const pHeight = canvasHeight * mmToPx;
+
+                    // Group loaded objects to manipulate them as a single block
                     const sel = new fabric.ActiveSelection(objects, { canvas });
-                    const scale = Math.min((canvasWidth * mmToPx) / (sel.width || 1), (canvasHeight * mmToPx) / (sel.height || 1));
+
+                    // Scale proportionally to fit inside the given width x height
+                    const scaleX = pWidth / sel.width!;
+                    const scaleY = pHeight / sel.height!;
+                    const scale = Math.min(scaleX, scaleY);
+
                     sel.scale(scale);
-                    sel.center();
-                    sel.destroy();
+                    sel.set({
+                        left: (workspaceSize * mmToPx) / 2,
+                        top: (workspaceSize * mmToPx) / 2,
+                        originX: 'center',
+                        originY: 'center'
+                    });
+                    sel.setCoords();
+                    sel.destroy(); // Ungroups them back onto the canvas perfectly positioned
                 }
 
-                const { safeRect } = drawVistaprintGuides();
-                setupBoundaries(safeRect);
-                resize();
+                // Now that template is loaded and centered, draw guides on top
+                const { safeRect } = drawGuides();
+                setupEvents(safeRect);
+                resizeCanvas();
                 setCanvas(canvas);
                 canvas.renderAll();
             };
 
-            if (data) canvas.loadFromJSON(data, finalSetup);
-            else finalSetup();
+            if (fabricData) {
+                canvas.loadFromJSON(fabricData, finishSetup);
+            } else {
+                finishSetup();
+            }
         };
 
         if (templateJson) {
-            fetch(templateJson).then(r => r.json()).then(d => init(d.fabric || d)).catch(() => init());
+            fetch(templateJson)
+                .then(res => res.json())
+                .then(data => initializeWorkspace(data.fabric || data))
+                .catch(err => {
+                    console.error("Template load failed:", err);
+                    initializeWorkspace(); // Load empty if JSON fails
+                });
         } else {
-            init();
+            initializeWorkspace();
         }
 
-        window.addEventListener('resize', resize);
-        return () => { window.removeEventListener('resize', resize); canvas.dispose(); };
+        window.addEventListener('resize', resizeCanvas);
+
+        return () => {
+            window.removeEventListener('resize', resizeCanvas);
+            canvas.dispose();
+        };
     }, [canvasWidth, canvasHeight, templateJson, workspaceSize, mmToPx]);
 
     return (
         <div className="flex-1 bg-[#f2f2f4] relative flex flex-col items-center justify-center w-full h-full p-4 overflow-hidden">
             <TopContextualToolbar />
-            <div ref={containerRef} className="w-full flex-1 flex items-center justify-center mt-12 overflow-hidden">
-                <div className="relative shadow-lg border border-gray-200">
+            <div ref={containerRef} className="w-full h-full flex items-center justify-center mt-12">
+                <div className="relative shadow-[0_4px_20px_rgba(0,0,0,0.08)] bg-[#f8f9fa] border border-gray-200">
                     <ObjectActionMenu />
                     <canvas ref={canvasRef} />
                 </div>
